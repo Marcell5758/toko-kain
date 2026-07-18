@@ -13,7 +13,7 @@
   1. Ganti data-client-key dengan Client Key ASLI dari dashboard Midtrans Anda (client key aman ditaruh di frontend).
   2. Ganti src dari app.sandbox.midtrans.com menjadi app.midtrans.com
 -->
-<script src="https://app.sandbox.midtrans.com/snap/snap.js" data-client-key="GANTI-DENGAN-CLIENT-KEY-ANDA"></script>
+<script src="https://app.sandbox.midtrans.com/snap/snap.js" data-client-key="Mid-client-AEqrDJILxa9ruUFx"></script>
 <style>
 /* ============================
    DESIGN TOKENS
@@ -945,7 +945,7 @@ async function payWithMidtrans(){
   };
 
   try {
-    const res = await fetch('/api/create-transaction', {
+    const res = await fetch('toko-kain-production.up.railway.app', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload)
