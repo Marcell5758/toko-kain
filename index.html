@@ -945,7 +945,7 @@ async function payWithMidtrans(){
   };
 
   try {
-    const res = await fetch('toko-kain-production-ee61.up.railway.app', {
+    const res = await fetch('toko-kain-production-ee61.up.railway.app/api/create-transaction', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload)
