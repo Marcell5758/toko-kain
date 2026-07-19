@@ -379,6 +379,14 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;}
   width:64px;height:64px;border-radius:50%;background:var(--soga);color:#fff;
   display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 20px;
 }
+.confirm-box .big-check.status-pending{background:#B8892F;}
+.confirm-box .big-check.status-paid{background:#3E7A4E;}
+.confirm-box .status-label{
+  display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  padding:4px 12px;border-radius:20px;margin-bottom:10px;
+}
+.confirm-box .status-label.status-pending{background:#FBEBD2;color:#8A5A15;}
+.confirm-box .status-label.status-paid{background:#E1F0E4;color:#2C6238;}
 .order-code{font-family:'JetBrains Mono',monospace;font-size:15px;background:var(--card);border:1px dashed var(--ink);padding:10px 16px;display:inline-block;margin:14px 0;}
 .err-msg{color:#a02f2f;font-size:12.5px;margin-top:-8px;margin-bottom:14px;display:none;}
 .toast{
@@ -851,20 +859,37 @@ function renderCheckout(){
     `;
   }
   else if(checkoutStep === 4){
-    document.getElementById('checkoutTitle').textContent = 'Pesanan Terkirim';
     const code = lastOrderCode || ('RK-' + Date.now().toString().slice(-8));
-    const msgs = {
-      sent_wa: 'Jendela WhatsApp telah dibuka dengan rincian pesanan. Selesaikan pemesanan dengan mengirim pesan tersebut ke admin kami.',
-      paid: 'Pembayaran berhasil diterima Midtrans. Pesanan Anda akan segera kami proses dan kirim.',
-      pending: 'Pembayaran Anda sedang menunggu konfirmasi (misalnya menunggu transfer VA). Kami akan memproses pesanan setelah pembayaran lunas.'
+    const info = {
+      sent_wa: {
+        title: 'Pesanan Terkirim',
+        heading: 'Pesanan berhasil dibuat',
+        msg: 'Jendela WhatsApp telah dibuka dengan rincian pesanan. Selesaikan pemesanan dengan mengirim pesan tersebut ke admin kami.',
+        icon: '✓', statusClass: '', label: null
+      },
+      paid: {
+        title: 'Pembayaran Berhasil',
+        heading: 'Pembayaran berhasil diterima',
+        msg: 'Pembayaran Anda sudah dikonfirmasi oleh Midtrans. Pesanan akan segera kami proses dan kirim.',
+        icon: '✓', statusClass: 'status-paid', label: 'Pembayaran Lunas'
+      },
+      pending: {
+        title: 'Menunggu Pembayaran',
+        heading: 'Selesaikan pembayaran Anda',
+        msg: 'Pesanan sudah dibuat, tapi pembayaran <strong>belum kami terima</strong> (misalnya masih menunggu transfer ke Virtual Account atau scan QRIS). Pesanan baru diproses setelah pembayaran lunas.',
+        icon: '⏳', statusClass: 'status-pending', label: 'Menunggu Pembayaran'
+      }
     };
+    const s = info[orderStatus] || info.sent_wa;
+    document.getElementById('checkoutTitle').textContent = s.title;
     body.innerHTML = `
       <div class="confirm-box">
-        <div class="big-check">✓</div>
-        <h3 style="font-size:20px;margin-bottom:8px;">Pesanan berhasil dibuat</h3>
+        <div class="big-check ${s.statusClass}">${s.icon}</div>
+        ${s.label ? `<div class="status-label ${s.statusClass}">${s.label}</div><br>` : ''}
+        <h3 style="font-size:20px;margin-bottom:8px;">${s.heading}</h3>
         <p style="font-size:14px;opacity:.75;">Kode pesanan Anda:</p>
         <div class="order-code">${code}</div>
-        <p style="font-size:13.5px;opacity:.7;max-width:380px;margin:10px auto 0;">${msgs[orderStatus] || msgs.sent_wa}</p>
+        <p style="font-size:13.5px;opacity:.7;max-width:380px;margin:10px auto 0;">${s.msg}</p>
         <button class="btn btn-primary" style="margin-top:22px;" onclick="finishOrder()">Selesai</button>
       </div>
     `;
@@ -954,15 +979,28 @@ async function payWithMidtrans(){
     const data = await res.json();
     if(!data.token) throw new Error('Token pembayaran tidak diterima dari backend');
 
+    // Snap memanggil onPending begitu instruksi pembayaran (VA/QRIS/dll) terbit —
+    // BUKAN saat user benar-benar sudah bayar. Supaya user tidak melihat layar
+    // "Pesanan Terkirim" saat popup Snap masih terbuka, hasilnya kita simpan dulu
+    // di snapResult dan baru diterapkan ke UI saat popup ditutup (onClose).
+    let snapResult = null;
+
     window.snap.pay(data.token, {
-      onSuccess: function(){ orderStatus = 'paid'; checkoutStep = 4; renderCheckout(); },
-      onPending: function(){ orderStatus = 'pending'; checkoutStep = 4; renderCheckout(); },
+      onSuccess: function(){ orderStatus = 'paid'; snapResult = 'paid'; },
+      onPending: function(){ orderStatus = 'pending'; snapResult = 'pending'; },
       onError: function(){
+        snapResult = null;
         if(btn){ btn.textContent = 'Bayar Sekarang →'; btn.disabled = false; }
         if(errBox){ errBox.textContent = 'Pembayaran gagal atau dibatalkan Midtrans. Silakan coba lagi.'; errBox.style.display = 'block'; }
       },
       onClose: function(){
         if(btn){ btn.textContent = 'Bayar Sekarang →'; btn.disabled = false; }
+        // Hanya pindah ke layar konfirmasi kalau memang ada hasil (sukses/pending).
+        // Kalau user menutup popup tanpa hasil apa pun, tetap di step 3 (ringkasan pesanan).
+        if(snapResult){
+          checkoutStep = 4;
+          renderCheckout();
+        }
       }
     });
   } catch(err){
