@@ -538,7 +538,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;}
 </footer>
 
 <!-- ============ CART DRAWER ============ -->
-<div class="overlay" id="overlay" onclick="closeAll()"></div>
+<div class="overlay" id="overlay" onclick="handleOverlayClick()"></div>
 <div class="drawer" id="cartDrawer">
   <div class="drawer-head">
     <h3>Keranjang Anda</h3>
@@ -564,7 +564,6 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;}
 <div class="modal-box" id="checkoutModal">
   <div class="modal-head">
     <h3 id="checkoutTitle">Checkout</h3>
-    <button class="close-btn" onclick="closeAll()">×</button>
   </div>
   <div class="modal-content" id="checkoutModalBody"></div>
 </div>
@@ -780,6 +779,13 @@ function closeAll(){
   document.getElementById('productModal').classList.remove('show');
   document.getElementById('checkoutModal').classList.remove('show');
 }
+function handleOverlayClick(){
+  // Popup Checkout sengaja tidak bisa ditutup dengan klik di luar area (overlay) —
+  // satu-satunya jalan keluar adalah tombol "Kembali" di dalam popup itu sendiri.
+  const checkoutOpen = document.getElementById('checkoutModal').classList.contains('show');
+  if(checkoutOpen) return;
+  closeAll();
+}
 
 /* ============================
    CHECKOUT FLOW (3 langkah)
@@ -815,7 +821,10 @@ function renderCheckout(){
         <textarea id="cAddress" placeholder="Jalan, no. rumah, kelurahan, kecamatan, kota, kode pos">${customerData.address||''}</textarea>
       </div>
       <div class="err-msg" id="stepErr">Mohon lengkapi semua data sebelum melanjutkan.</div>
-      <button class="btn btn-primary btn-block" onclick="toStep2()">Lanjut ke Pembayaran →</button>
+      <div style="display:flex;gap:10px;margin-top:6px;">
+        <button class="btn btn-ghost" style="border:1px solid var(--ink);color:var(--ink);flex:1;justify-content:center;" onclick="closeAll()">← Kembali</button>
+        <button class="btn btn-primary" style="flex:2;justify-content:center;" onclick="toStep2()">Lanjut ke Pembayaran →</button>
+      </div>
     `;
   }
   else if(checkoutStep === 2){
@@ -979,28 +988,23 @@ async function payWithMidtrans(){
     const data = await res.json();
     if(!data.token) throw new Error('Token pembayaran tidak diterima dari backend');
 
-    // Snap memanggil onPending begitu instruksi pembayaran (VA/QRIS/dll) terbit —
-    // BUKAN saat user benar-benar sudah bayar. Supaya user tidak melihat layar
-    // "Pesanan Terkirim" saat popup Snap masih terbuka, hasilnya kita simpan dulu
-    // di snapResult dan baru diterapkan ke UI saat popup ditutup (onClose).
-    let snapResult = null;
-
+    // PENTING: onClose Midtrans TIDAK selalu terpanggil setelah onPending/onSuccess —
+    // menurut dokumentasi Midtrans, onClose hanya terjamin terpanggil kalau popup ditutup
+    // SEBELUM pembayaran "selesai diproses". Karena itu status diterapkan LANGSUNG di
+    // onPending/onSuccess (mengikuti pola resmi Midtrans), bukan ditunda sampai popup ditutup —
+    // supaya tombol tidak macet di "Memproses..." kalau onClose tidak terpanggil.
     window.snap.pay(data.token, {
-      onSuccess: function(){ orderStatus = 'paid'; snapResult = 'paid'; },
-      onPending: function(){ orderStatus = 'pending'; snapResult = 'pending'; },
+      onSuccess: function(){ orderStatus = 'paid'; checkoutStep = 4; renderCheckout(); },
+      onPending: function(){ orderStatus = 'pending'; checkoutStep = 4; renderCheckout(); },
       onError: function(){
-        snapResult = null;
         if(btn){ btn.textContent = 'Bayar Sekarang →'; btn.disabled = false; }
         if(errBox){ errBox.textContent = 'Pembayaran gagal atau dibatalkan Midtrans. Silakan coba lagi.'; errBox.style.display = 'block'; }
       },
       onClose: function(){
-        if(btn){ btn.textContent = 'Bayar Sekarang →'; btn.disabled = false; }
-        // Hanya pindah ke layar konfirmasi kalau memang ada hasil (sukses/pending).
-        // Kalau user menutup popup tanpa hasil apa pun, tetap di step 3 (ringkasan pesanan).
-        if(snapResult){
-          checkoutStep = 4;
-          renderCheckout();
-        }
+        // Ini cuma kepanggil kalau user menutup popup SEBELUM ada hasil apa pun
+        // (belum pilih metode / belum sempat generate VA-QRIS). Kalau sudah pindah
+        // ke step 4, tombol ini sudah tidak tampil lagi jadi aman diabaikan.
+        if(checkoutStep !== 4 && btn){ btn.textContent = 'Bayar Sekarang →'; btn.disabled = false; }
       }
     });
   } catch(err){
